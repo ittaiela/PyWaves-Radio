@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, font
 import socket
 import threading
+
+import datetime
 import pyaudio
 import time
 import numpy as np
@@ -1136,17 +1138,17 @@ class ModernRadioClient:
         """Close audio stream safely"""
         print("Closing audio stream")
 
-        with self.stream_lock:
-            if self.stream:
-                try:
-                    if hasattr(self.stream, 'is_active') and self.stream.is_active():
-                        self.stream.stop_stream()
-                    self.stream.close()
-                    self.stream = None
-                    print("Audio stream closed")
-                except Exception as e:
-                    print(f"Error closing audio stream: {e}")
-                    self.stream = None
+        # with self.stream_lock:
+        #     if self.stream:
+        #         try:
+        #             if hasattr(self.stream, 'is_active') and self.stream.is_active():
+        #                 self.stream.stop_stream()
+        #             self.stream.close()
+        #             self.stream = None
+        #             print("Audio stream closed")
+        #         except Exception as e:
+        #             print(f"Error closing audio stream: {e}")
+        #             self.stream = None
 
     def login_again(self):
         """Try to login again with saved credentials"""
@@ -1183,7 +1185,8 @@ class ModernRadioClient:
     def receive_messages(self):
         """Receive messages from server"""
         buffer = b''
-
+        lastaudiorecvd = 0
+        connectionflag = True
         while self.connected and not self.shutdown_event.is_set():
             try:
                 data = None
@@ -1191,17 +1194,27 @@ class ModernRadioClient:
                 try:
                     data, addr = self.client_socket.recvfrom(2048 * 4)
                 except ConnectionResetError:
-                    break
+                    pass
                 except socket.timeout:
-                    break
+                    pass
                 except Exception as e:
                     print("Error in receive udp", e)
 
                 if not data:
                     print("No data received")
-                    break
+                    if lastaudiorecvd == 0 or datetime.datetime.now() - lastaudiorecvd >= datetime.timedelta(seconds=5):
+                        self.update_connection_status(False)
+                        connectionflag = False
+
+                    time.sleep(1)
+                    continue
 
                 buffer += data
+                lastaudiorecvd = datetime.datetime.now()
+                if not connectionflag:
+                    self.update_connection_status(True)
+                    connectionflag = True
+
 
                 while buffer and not self.shutdown_event.is_set():
                     if buffer.startswith(b'AUDIO'):
@@ -1259,10 +1272,10 @@ class ModernRadioClient:
                     print(f"Error receiving data: {e}")
                 break
 
-        print("Message receiver thread ending")
-        if not hasattr(self, 'closing') or not self.closing:
-            if not self.shutdown_event.is_set():
-                self.disconnect_safe()
+        # print("Message receiver thread ending")
+        # if not hasattr(self, 'closing') or not self.closing:
+        #     if not self.shutdown_event.is_set():
+        #         self.disconnect_safe()
 
     def handle_json_message_safe(self, msg):
         """Handle JSON messages safely"""
@@ -1349,6 +1362,7 @@ class ModernRadioClient:
                     pass
 
             time.sleep(4)
+        print("not connected anymore")
 
     def connect(self):
         """Connect to server"""
